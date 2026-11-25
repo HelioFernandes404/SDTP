@@ -11,15 +11,6 @@ ARG PYTHON_DIGEST=sha256:44cf1793efa7c7a476bb0f2cff81443f4a072c90c1cb127e2924933
 
 FROM ${REGISTRY}/${PYTHON_IMAGE}@${PYTHON_DIGEST}
 
-# Rastreabilidade: SHA completo do commit. Obrigatório (sem "unknown" em imagem publicada).
-ARG VCS_REF
-ARG VERSION=dev
-RUN test -n "${VCS_REF}" || { echo "erro: --build-arg VCS_REF=<sha do commit> é obrigatório" >&2; exit 1; }
-LABEL org.opencontainers.image.title="contador" \
-      org.opencontainers.image.source="https://github.com/HelioFernandes404/SDTP" \
-      org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.version="${VERSION}"
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DATA_DIR=/data \
@@ -47,3 +38,14 @@ HEALTHCHECK --interval=15s --timeout=3s --retries=3 --start-period=10s \
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python3", "/app/app.py"]
+
+# Rastreabilidade no FIM de propósito: um ARG muda a chave de cache de todo RUN
+# depois dele. Aqui em cima, cada commit novo refaria useradd e COPY.
+# SHA completo do commit é obrigatório (sem "unknown" em imagem publicada).
+ARG VCS_REF
+ARG VERSION=dev
+RUN test -n "${VCS_REF}" || { echo "erro: --build-arg VCS_REF=<sha do commit> é obrigatório" >&2; exit 1; }
+LABEL org.opencontainers.image.title="contador" \
+      org.opencontainers.image.source="https://github.com/HelioFernandes404/SDTP" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${VERSION}"

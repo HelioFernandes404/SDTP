@@ -5,7 +5,7 @@
 set -euo pipefail
 
 IMG=${1:?uso: $0 <imagem:tag>}
-TOKEN="token-de-exemplo-$RANDOM$RANDOM"   # valor falso, só para o teste
+TOKEN="${TEST_TOKEN:-token-de-exemplo-$RANDOM$RANDOM}"   # valor falso, só para o teste
 WORK=$(mktemp -d)
 NAME="contador-teste-$$"
 VOL="contador-teste-dados-$$"
@@ -79,8 +79,11 @@ docker save "$IMG" -o "$WORK/img.tar"
 mkdir "$WORK/img" && tar -xf "$WORK/img.tar" -C "$WORK/img"
 achou=0
 while IFS= read -r -d '' blob; do
-  # layers podem vir comprimidos (gzip/zstd) ou não; tenta descompactar e procura o valor
-  if { zcat -f "$blob" 2>/dev/null || zstdcat "$blob" 2>/dev/null; } | grep -aqF "$TOKEN"; then achou=1; fi
+  # layers podem vir em gzip, zstd ou sem compressão: escolhe o leitor certo por blob
+  if gzip -t "$blob" 2>/dev/null; then ler=(zcat)
+  elif zstd -qt "$blob" 2>/dev/null; then ler=(zstdcat -q)
+  else ler=(cat); fi
+  if "${ler[@]}" "$blob" | grep -aqF "$TOKEN"; then achou=1; fi
 done < <(find "$WORK/img" -type f -print0)
 [[ $achou == 0 ]] && ok "valor do token não aparece em nenhum blob/layer do docker save" || falha "token encontrado na imagem!"
 hist=$(docker history --no-trunc "$IMG")

@@ -19,7 +19,7 @@ preparação dos nós com Ansible. Enunciado original em [`ENUNCIADO.md`](ENUNCI
 
 ```sh
 make image        # build com tag rastreável (git describe) e SHA do commit na label
-make image-test   # 15 verificações (abaixo)
+make image-test   # 14 verificações (abaixo)
 make image-scan   # trivy: falha se houver CVE HIGH/CRITICAL com correção disponível
 make lint         # hadolint + shellcheck
 
@@ -43,7 +43,7 @@ docker run --rm -p 8080:8080 -v /tmp/api_token:/run/secrets/api_token:ro -v dado
    (o teste extrai o `docker save`, descompacta cada blob e procura o valor falso usado no teste);
 8. **rastreabilidade:** label `org.opencontainers.image.revision` com o SHA completo (40 hex).
 
-Resultado da última execução: 15/15 OK. Verificações extras feitas à mão:
+Resultado da última execução: 14/14 OK. Verificações extras feitas à mão:
 
 | Verificação | Resultado |
 |---|---|
@@ -54,6 +54,8 @@ Resultado da última execução: 15/15 OK. Verificações extras feitas à mão:
 | Build com `REGISTRY=mirror.gcr.io` | ok |
 | trivy 0.58.1 (HIGH/CRITICAL com correção) | 0 |
 | hadolint 2.12.0 | sem apontamentos |
+| **Controle positivo** da verificação 7: imagem com o token gravado de propósito | o teste acusa `FALHA` (layer e history) — a verificação funciona |
+| Cache: 2 builds com `VCS_REF` diferentes | `useradd` e `COPY` saem `CACHED`; só o passo final muda |
 
 ### Decisões e trade-offs
 
@@ -79,6 +81,8 @@ Detalhes que valem explicar:
   próprio código. Só `/data` é do UID 10001.
 - **`.dockerignore` em lista branca:** só `app/app.py` e `docker/entrypoint.sh` entram no contexto,
   então nada do repositório (inclusive a chave do lab) vaza para a imagem.
+- **`ARG VCS_REF` no fim do Dockerfile:** um `ARG` muda a chave de cache de todo `RUN` depois dele.
+  No topo, cada commit novo refaria `useradd` e `COPY`; no fim, só o passo de label muda.
 - **Sem `# syntax=docker/dockerfile:1`:** essa diretiva baixa o frontend do BuildKit do Docker Hub, o
   que numa rede restrita também precisaria passar pelo mirror. O BuildKit atual já suporta tudo o que usamos.
 
@@ -89,3 +93,18 @@ Detalhes que valem explicar:
   A imagem já usa `/healthz`; a stack e os manifests serão corrigidos na Parte 3.
 - **Token lido uma vez:** o app lê `API_TOKEN` só na inicialização. Rotacionar o segredo exige
   reiniciar os pods (rollout), o que será explicado na Parte 3.
+
+---
+
+## Uso de IA
+
+Ferramentas: **Claude Code** (Claude Opus) como assistente principal e **Codex** como revisor independente
+dos planos. Processo adotado em cada parte: o Claude lê o enunciado, escreve um plano com as decisões
+e alternativas, o Codex revisa o plano, e **eu escolho cada trade-off** antes de qualquer código.
+Os planos e minhas escolhas ficam registrados fora do repositório, nas minhas notas.
+
+| Parte | O que a IA fez | O que eu decidi, corrigi ou rejeitei |
+|---|---|---|
+| Lab (`bootstrap/`) | Claude escreveu o script de VMs com libvirt e cloud-init e diagnosticou o ufw bloqueando o DHCP da bridge nova. Um agente auxiliar apontou que a imagem do Ubuntu já vem com login por senha desligado, o que tornaria inútil o teste da Parte 4 | Escolhi 3 VMs. Pedi o baseline de SSH inseguro para o teste da Parte 4 provar algo |
+| Parte 1 | Claude escreveu o plano D1–D8, o Dockerfile, o entrypoint e os testes. O Codex corrigiu fatos do plano: distroless hoje é Python 3.13, digest igual no mirror não é garantido, `$(cat)` remove todas as quebras finais, layers do `docker save` vêm comprimidos | **D3:** troquei "avisar e subir" (sugestão do Claude) por **falhar sem o token**. **D4:** troquei `STOPSIGNAL` (sugestão do Claude) por **handler no app**, seguindo o Codex. **D8:** a tag com versão + hash foi ideia minha |
+| | _(a completar por mim: o que revisei linha a linha, o que mudei ou não aceitei)_ | |
