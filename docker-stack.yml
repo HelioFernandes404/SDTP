@@ -1,0 +1,52 @@
+# Stack como roda hoje no Docker Swarm de produção.
+# Ponto de partida para a Parte 3 do desafio (migração para Kubernetes).
+version: "3.8"
+
+services:
+  contador:
+    image: registry.exemplo.local/contador:1.4.2
+    environment:
+      APP_MESSAGE: "Contador em produção"
+      DATA_DIR: /data
+    secrets:
+      - source: contador_api_token
+        target: api_token
+    # o entrypoint da imagem exporta API_TOKEN a partir de /run/secrets/api_token
+    volumes:
+      - contador_dados:/data
+    networks:
+      - traefik-public
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.contador.rule=Host(`contador.exemplo.local`)
+        - traefik.http.routers.contador.entrypoints=websecure
+        - traefik.http.routers.contador.tls=true
+        - traefik.http.services.contador.loadbalancer.server.port=8080
+
+volumes:
+  contador_dados:
+    driver: local
+
+secrets:
+  contador_api_token:
+    external: true
+
+networks:
+  traefik-public:
+    external: true
