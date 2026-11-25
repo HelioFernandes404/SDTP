@@ -1,3 +1,4 @@
 bootstrap/.cache/
 bootstrap/.ssh/
 bootstrap/inventory.ini
+__pycache__/
