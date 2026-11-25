@@ -1,0 +1,15 @@
+<!-- Rede NAT dedicada do lab. IPs fixos por MAC para o inventário ser previsível. -->
+<network>
+  <name>desafio-net</name>
+  <forward mode='nat'/>
+  <bridge name='virbr-desafio' stp='on' delay='0'/>
+  <domain name='desafio.local' localOnly='yes'/>
+  <ip address='192.168.150.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.150.100' end='192.168.150.200'/>
+      <host mac='52:54:00:de:5a:11' name='desafio-cp1' ip='192.168.150.11'/>
+      <host mac='52:54:00:de:5a:21' name='desafio-w1'  ip='192.168.150.21'/>
+      <host mac='52:54:00:de:5a:22' name='desafio-w2'  ip='192.168.150.22'/>
+    </dhcp>
+  </ip>
+</network>
