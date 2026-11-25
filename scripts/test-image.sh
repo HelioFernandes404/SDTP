@@ -83,7 +83,9 @@ while IFS= read -r -d '' blob; do
   if gzip -t "$blob" 2>/dev/null; then ler=(zcat)
   elif zstd -qt "$blob" 2>/dev/null; then ler=(zstdcat -q)
   else ler=(cat); fi
-  if "${ler[@]}" "$blob" | grep -aqF "$TOKEN"; then achou=1; fi
+  # sem -q de propósito: com pipefail, "grep -q" sai no 1º acerto, o leitor leva
+  # SIGPIPE e o pipeline inteiro "falha" justamente quando o token FOI encontrado.
+  if "${ler[@]}" "$blob" | grep -aF "$TOKEN" >/dev/null; then achou=1; fi
 done < <(find "$WORK/img" -type f -print0)
 [[ $achou == 0 ]] && ok "valor do token não aparece em nenhum blob/layer do docker save" || falha "token encontrado na imagem!"
 hist=$(docker history --no-trunc "$IMG")
