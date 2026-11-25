@@ -11,6 +11,7 @@ Variáveis de ambiente:
 """
 import json
 import os
+import signal
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -68,7 +69,21 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, {"visitas": 0})
 
 
+def _encerrar(signum, _frame):
+    # Como PID 1 no contêiner, o kernel não aplica a ação padrão do SIGTERM:
+    # sem este handler o processo ignora o sinal e só morre no SIGKILL
+    # (10 s no Docker, 30 s no Kubernetes). SystemExit interrompe o
+    # serve_forever() na thread principal; shutdown() aqui travaria.
+    raise SystemExit(0)
+
+
 if __name__ == "__main__":
     os.makedirs(DATA_DIR, exist_ok=True)
+    signal.signal(signal.SIGTERM, _encerrar)
+    servidor = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"ouvindo na porta {PORT}, dados em {DATA_DIR}", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    try:
+        servidor.serve_forever()
+    finally:
+        servidor.server_close()
+        print("encerrado", flush=True)
