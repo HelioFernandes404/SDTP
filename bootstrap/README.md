@@ -38,6 +38,10 @@ Tudo é idempotente: `make up` de novo não recria nada que já existe.
 
 ```sh
 ansible -i inventory.ini all -m ping
+
+# baseline inseguro do SSH (antes da Parte 4): espera-se "yes" nas três linhas
+ansible -i inventory.ini all -b -m shell \
+  -a 'sshd -T | grep -E "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) "'
 ```
 
 ## Decisões
@@ -45,6 +49,12 @@ ansible -i inventory.ini all -m ping
 - **Ubuntu "cru":** o cloud-init só cria o usuário temporário `bootstrap` com chave SSH.
   Usuário de operação, endurecimento do SSH e k0s são papel do playbook (Parte 4), para que ele
   seja testado contra um servidor recém-entregue.
+- **Baseline de SSH propositalmente inseguro:** a imagem oficial do Ubuntu já vem com login por
+  senha desligado, então um teste do playbook passaria mesmo sem ele fazer nada. O cloud-init grava
+  `/etc/ssh/sshd_config.d/01-lab-baseline-inseguro.conf` ligando senha, keyboard-interactive e root.
+  O `01-` importa: o sshd usa o **primeiro** valor que lê e percorre `sshd_config.d` em ordem
+  alfabética, então esse arquivo vence o `60-cloudimg-settings.conf` da imagem. O playbook da
+  Parte 4 precisa levar isso em conta (um arquivo com nome "maior" seria ignorado em silêncio).
 - **Rede própria** (`desafio-net`, NAT, `192.168.150.0/24`) com IP fixo por MAC: inventário
   previsível e sem mexer na rede `default` do libvirt.
 - **Overlay qcow2** sobre uma imagem base única: cada VM nasce em segundos e ocupa pouco disco.

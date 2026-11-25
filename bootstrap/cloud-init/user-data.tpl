@@ -16,8 +16,23 @@ users:
     ssh_authorized_keys:
       - __SSH_PUBKEY__
 
+# Baseline propositalmente INSEGURO: a imagem oficial já vem com senha desligada,
+# o que tornaria o teste da Parte 4 inútil (passaria sem o playbook fazer nada).
+# Aqui simulamos um servidor "como entregue", com senha e root liberados no SSH.
+# O sshd usa o PRIMEIRO valor que encontra e lê sshd_config.d em ordem
+# alfabética, por isso "01-" vence o 60-cloudimg-settings.conf da imagem.
+write_files:
+  - path: /etc/ssh/sshd_config.d/01-lab-baseline-inseguro.conf
+    permissions: "0644"
+    content: |
+      # Criado pelo bootstrap do lab. O playbook da Parte 4 deve neutralizar isto.
+      PasswordAuthentication yes
+      KbdInteractiveAuthentication yes
+      PermitRootLogin yes
+
 package_update: false
 packages:
   - qemu-guest-agent
 runcmd:
   - [systemctl, enable, --now, qemu-guest-agent]
+  - [systemctl, try-reload-or-restart, ssh]
