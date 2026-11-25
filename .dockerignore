@@ -1,0 +1,4 @@
+# Contexto mínimo: só o que a imagem precisa.
+*
+!app/app.py
+!docker/entrypoint.sh
