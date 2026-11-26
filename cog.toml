@@ -1,0 +1,9 @@
+# Cocogitto: lint de Conventional Commits (`cog check`) e cálculo da próxima versão SemVer.
+# A versão do app nunca é digitada: `make release` cria a tag que o cog calcula.
+# O chart (chart/) tem versão própria, manual no Chart.yaml, e ciclo separado do app.
+
+tag_prefix = "v"
+ignore_merge_commits = true   # "Merge pull request #N" não segue o padrão e não muda versão
+disable_bump_commit = true    # `cog bump` só cria a tag, sem commit novo: a tag fica no commit testado
+disable_changelog = true      # changelog exigiria commit de versão (mudaria o SHA da release)
+skip_untracked = true         # permite calcular a versão com árvore suja (build local); `make release` exige árvore limpa

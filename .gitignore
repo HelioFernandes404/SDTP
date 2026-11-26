@@ -2,3 +2,4 @@ bootstrap/.cache/
 bootstrap/.ssh/
 bootstrap/inventory.ini
 __pycache__/
+.gitlab-ci-local/
