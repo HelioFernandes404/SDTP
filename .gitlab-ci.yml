@@ -1,0 +1,102 @@
+# Pipeline do contador (entrega da Parte 2). O equivalente roda de verdade em .github/workflows/pipeline.yml.
+#
+#   MR para develop    -> lint das mensagens de commit (a versão sai delas)
+#   push na develop    -> build + push 1.5.0-rc.N.<sha>  -> deploy em homologação (automático)
+#   tag v1.5.0         -> build + push 1.5.0             -> deploy em produção (manual)
+#
+# Variáveis de CI/CD (Settings > CI/CD > Variables), por environment:
+#   KUBECONFIG    tipo File, escopo homologacao / producao, protegida e mascarada
+#   KUBE_CONTEXT  contexto dentro desse kubeconfig
+#   BASE_REGISTRY mirror das imagens públicas (padrão docker.io); vale para a base do Dockerfile
+#   COG_URL       (opcional) cópia do binário do cog no mirror de artefatos
+# Protegidas só chegam a refs protegidas: proteger a branch develop e as tags v*.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+    - if: $CI_COMMIT_BRANCH == "develop" && $CI_PIPELINE_SOURCE == "push"
+    # qualquer outra ref (branches de feature sem MR, outras tags): sem pipeline
+
+stages:
+  - lint
+  - build
+  - deploy-homologacao
+  - deploy-producao
+
+variables:
+  GIT_DEPTH: "0"              # clone completo: git describe e cog precisam do histórico e das tags
+  BASE_REGISTRY: docker.io
+  IMAGE: $CI_REGISTRY_IMAGE
+
+# ---------------------------------------------------------------- lint
+commits:
+  stage: lint
+  image: $BASE_REGISTRY/library/alpine:3.21
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - apk add --no-cache curl git
+    - scripts/install-cog.sh
+  script:
+    - cog check "$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA"
+
+# ---------------------------------------------------------------- build
+build:
+  stage: build
+  image: $BASE_REGISTRY/library/docker:27.5.1-cli
+  services:
+    - name: $BASE_REGISTRY/library/docker:27.5.1-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs          # TLS entre o job e o dind
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+    - if: $CI_COMMIT_BRANCH == "develop"
+  interruptible: true
+  before_script:
+    - apk add --no-cache curl git make
+    - scripts/install-cog.sh
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - VERSION="$(scripts/versao.sh)"
+    - make image-push REGISTRY="$BASE_REGISTRY" IMAGE="$IMAGE" VERSION="$VERSION"
+    # A tag calculada aqui é a que os deploys usam (não recalculam):
+    - echo "IMAGE_TAG=$VERSION" > build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+
+# ---------------------------------------------------------------- deploy
+# Contrato: o job só chama `make deploy`. Hoje é kubectl set image + rollout status
+# (job vermelho se o rollout falhar); a Parte 3 troca o corpo de scripts/deploy.sh.
+.deploy:
+  image: $BASE_REGISTRY/alpine/k8s:1.34.12      # kubectl fixado na versão do cluster
+  needs: [build]                                # recebe IMAGE_TAG pelo dotenv
+  interruptible: false                          # nunca cancelar um deploy no meio
+  before_script:
+    - apk add --no-cache make
+  script:
+    - make deploy AMBIENTE="$CI_ENVIRONMENT_NAME" IMAGE_TAG="$IMAGE_TAG"
+
+deploy-homologacao:
+  extends: .deploy
+  stage: deploy-homologacao
+  environment:
+    name: homologacao
+    url: https://contador.homologacao.exemplo.local
+  resource_group: homologacao                   # um deploy por vez neste ambiente
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"        # automático
+
+deploy-producao:
+  extends: .deploy
+  stage: deploy-producao
+  environment:
+    name: producao
+    url: https://contador.exemplo.local
+  resource_group: producao
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: manual                              # botão "play"; dentro de rules, bloqueia o pipeline até alguém clicar
