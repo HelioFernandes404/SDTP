@@ -1,13 +1,21 @@
 REGISTRY ?= docker.io
 IMAGE    ?= contador
-VCS_REF  ?= $(shell git rev-parse HEAD)
-# "1.5.0" numa tag v1.5.0; "1.5.0-rc.3.d743945" fora de tag (ver scripts/versao.sh).
-# ?= : o CI pode passar VERSION pronta; localmente é calculada só quando algum alvo usa.
-VERSION  ?= $(shell ./scripts/versao.sh)
 
-.PHONY: tag-livre image image-push image-test image-scan lint deploy release
+# VCS_REF e VERSION: calculados uma única vez, e só se algum alvo usar (lint não precisa do cog).
+# "X = $(eval X := ...)$(X)": na primeira leitura troca a si mesma pelo valor e não roda de novo.
+# Valor passado na linha de comando (o CI passa VERSION pronta) tem prioridade; variável de ambiente não.
+# "1.5.0" numa tag v1.5.0; "1.5.0-rc.3.gd743945" fora de tag (ver scripts/versao.sh).
+ifneq ($(origin VCS_REF),command line)
+VCS_REF = $(eval VCS_REF := $$(shell git rev-parse HEAD))$(VCS_REF)
+endif
+ifneq ($(origin VERSION),command line)
+VERSION = $(eval VERSION := $$(shell ./scripts/versao.sh))$(VERSION)
+endif
+
+.PHONY: image image-push image-test image-scan lint deploy release
 
 image:  ## builda a imagem com tag rastreável até o commit
+	@test -n "$(VERSION)" || { echo "erro: VERSION vazia (scripts/versao.sh falhou; cog instalado?)" >&2; exit 1; }
 	docker build \
 	  --build-arg REGISTRY=$(REGISTRY) \
 	  --build-arg VCS_REF=$(VCS_REF) \
@@ -15,12 +23,8 @@ image:  ## builda a imagem com tag rastreável até o commit
 	  -t $(IMAGE):$(VERSION) .
 	@echo "imagem: $(IMAGE):$(VERSION)"
 
-tag-livre:  # tags são imutáveis: falha antes do build se a tag já existe no registry
-	@if docker manifest inspect $(IMAGE):$(VERSION) >/dev/null 2>&1; then \
-	  echo "erro: $(IMAGE):$(VERSION) já existe no registry; tags são imutáveis" >&2; exit 1; fi
-
-image-push: tag-livre image  ## publica no registry (recusa sobrescrever tag existente)
-	docker push $(IMAGE):$(VERSION)
+image-push:  ## publica no registry; nunca sobrescreve tag (mesmo commit = nada a fazer)
+	./scripts/publicar-imagem.sh "$(IMAGE)" "$(VERSION)" "$(VCS_REF)" "$(REGISTRY)"
 
 image-test: image  ## verificações da Parte 1
 	./scripts/test-image.sh $(IMAGE):$(VERSION)
