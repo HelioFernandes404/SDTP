@@ -40,6 +40,7 @@ commits:
     - scripts/install-cog.sh
   script:
     - cog check "$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA"
+    - git config --global user.name ci          # cog verify aborta sem user.name
     - cog verify "$CI_MERGE_REQUEST_TITLE"     # título do MR também no padrão
     # Projeto com merge method "Merge commit" (sem squash): os commits checados são os que ficam na develop.
 

@@ -33,4 +33,7 @@ jobs:
       - name: Checar o título do PR
         env:
           TITULO: ${{ github.event.pull_request.title }}   # via env: o título nunca vira código do shell
-        run: cog verify "$TITULO"
+        # cog verify lê user.name do git (o runner não tem) e aborta sem ele.
+        run: |
+          git config --global user.name ci
+          cog verify "$TITULO"
