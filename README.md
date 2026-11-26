@@ -103,9 +103,9 @@ O `.gitlab-ci.yml` é a entrega. O mesmo fluxo roda de verdade no GitHub Actions
 
 ```
 PR/MR para develop  → lint das mensagens de commit e do título (a versão sai delas)
-push na develop     → build + push 1.5.0-rc.3.d743945 → deploy em homologação (automático)
+push na develop     → build + push 1.5.0-rc.3.gd743945 → deploy em homologação (automático, só a ponta da develop)
 make release        → cria a tag v1.5.0 calculada a partir dos commits
-tag v1.5.0          → build + push 1.5.0              → deploy em produção (manual)
+tag v1.5.0          → build + push 1.5.0               → deploy em produção (manual)
 ```
 
 ### Como rodar e verificar
@@ -117,40 +117,48 @@ make release                     # só na develop, igual à origin, pede confirm
 
 # contrato de deploy (o que os jobs chamam)
 IMAGE=ghcr.io/heliofernandes404/contador KUBE_CONTEXT=<contexto> \
-  make deploy AMBIENTE=homologacao IMAGE_TAG=1.5.0-rc.3.d743945
+  make deploy AMBIENTE=homologacao IMAGE_TAG=1.5.0-rc.3.gd743945
 ```
 
 | Verificação | Resultado |
 |---|---|
-| `versao.sh` em repo descartável: na tag / feat / fix / `feat!` / chore depois de release / árvore suja | `1.5.0` / `1.5.0-rc.2.<sha>` / patch / `2.0.0-rc…` / patch / `…-dirty` |
-| `versao.sh` em clone raso | falha (exit 128) em vez de inventar versão |
-| `make release` em repo descartável | recusa HEAD à frente da origin, recusa commit que já é release, cria e envia só a tag nova |
+| `versao.sh` em repo descartável: pipeline da tag / feat / fix / `feat!` / só docs depois de release / árvore suja | `1.5.0` / `1.5.0-rc.2.g<sha>` / patch / `2.0.0-rc…` / patch / `…-dirty` |
+| `versao.sh` em pipeline da develop com a tag de release já no commit (corrida com o `make release`) | continua RC (`1.5.1-rc.0.g<sha>`): quem decide é a ref que disparou o pipeline |
+| `versao.sh` com tags `v2-experimento`, `v1.6.0-rc.1`, tag `v1.5.0;id`, `cog.toml` quebrado, clone raso | as duas primeiras são ignoradas; as outras falham com erro (nada de versão inventada) |
+| `make release` em repo descartável | recusa HEAD à frente da origin, arquivo não rastreado e commit que já é release; se o push falha, remove a tag local |
+| `publicar-imagem.sh` contra um `registry:2` local: tag livre / rerodar no mesmo commit / tag de outro commit / registry fora do ar | publica / "nada a fazer" / erro / erro (na dúvida, não publica) |
+| `ainda-e-ponta.sh`: commit superado na develop | deploy de homologação pulado (o pipeline mais novo faz o dele) |
+| `ci-deploy.sh` sem kubeconfig: sem `DEPLOY_SIMULADO` / com `DEPLOY_SIMULADO=true` | falha / aviso de deploy simulado |
+| Makefile | `versao.sh` roda uma vez por build (antes ~7); `make lint` não chama o cog; sem cog, erro claro |
 | `make deploy` em cluster k3d descartável: tag existente | rollout completo, exit 0, `rollout history` com a versão |
 | `make deploy` com tag inexistente | job falha após o timeout; os 2 pods antigos seguem atendendo (`maxUnavailable: 0`) |
 | `gitlab-ci-local --list` simulando push na develop / tag `v1.5.0` / MR / outra tag | `build → deploy-homologacao` / `build → deploy-producao (manual)` / `lint-commits` / nada |
 | `actionlint`, `shellcheck`, schema do GitLab CI | sem apontamentos |
 
-No GitHub, o repositório não alcança um cluster, então o passo de deploy **avisa que não rodou** (com o
-comando que rodaria) em vez de ficar verde em silêncio. Com `KUBECONFIG_B64`/`KUBE_CONTEXT` no environment, ele executa.
+No GitHub, o repositório não alcança um cluster. Os environments declaram `DEPLOY_SIMULADO=true`, e o passo de deploy
+registra um aviso de **deploy simulado** com o comando que rodaria. Sem essa variável, faltar `KUBECONFIG_B64` ou
+`KUBE_CONTEXT` **falha** o job: uma variável apagada em produção não pode virar um deploy verde que não aconteceu.
+**Atenção:** o `pipeline.yml` só dispara em push na develop e em tag; a primeira execução real no GitHub acontece no merge deste PR.
 
 ### Decisões e trade-offs
 
 | # | Decisão | Por quê | Alternativa descartada |
 |---|---|---|---|
-| D8 | Tag `1.5.0-rc.3.d743945` na develop, `1.5.0` na release; SHA completo na label OCI | Mostra a versão que está sendo preparada, quantos commits desde a última e o commit. Ordena certo no SemVer | `git describe` puro: `1.4.2-3-gabc` é pré-release e ordena **antes** da 1.4.2. Hífen antes do hash: `rc.10-…` ordenaria antes de `rc.3-…` |
+| D8 | Tag `1.5.0-rc.3.gd743945` na develop, `1.5.0` na tag; SHA completo na label OCI. Quem decide entre RC e release é a ref que disparou o pipeline | Mostra a versão que está sendo preparada, quantos commits desde a última e o commit. Ordena certo no SemVer | `git describe` puro: `1.4.2-3-gabc` é pré-release e ordena **antes** da 1.4.2. Hífen antes do hash: `rc.10-…` ordenaria antes de `rc.3-…`. Sem o `g`, um hash só de dígitos com zero à esquerda seria SemVer inválido |
 | D9/D13 | Versão calculada por Conventional Commits com o **Cocogitto** (binário único: lint + cálculo); a tag é criada por uma pessoa (`make release`) | A máquina faz a conta; a pessoa decide quando lançar. Lint e cálculo usam a mesma regra | Arquivo `VERSION` (alguém esquece de subir); semantic-release (Node, tag criada no CI com `GITHUB_TOKEN` não dispara o pipeline de produção) |
 | D10 | Build com Docker (`docker:dind` no GitLab), o mesmo `make image` em todo lugar | Igual local, Actions e GitLab | Kaniko (arquivado pelo Google em 2025); BuildKit rootless (outro comando) |
 | D11 | O pipeline da tag reconstrói a imagem | Simples e igual ao enunciado; a base fixada por digest (D2) deixa o resultado praticamente igual | Promover a imagem testada em homologação — ver propostas abaixo |
 | D23 | **Contrato de deploy**: o job só chama `make deploy AMBIENTE IMAGE_TAG`; hoje `kubectl set image` + `rollout status` | É o que o enunciado sugere, e o job fica vermelho se o pod novo não subir. A Parte 3 troca só `scripts/deploy.sh` | Fechar Helm/ArgoCD antes de analisar a stack (Parte 3) |
 | P7 | Produção **manual** | Item 2 "deploy em homologação, automático" × item 3 "deploy em produção, manual". `make release` decide **o que** vai; o clique decide **quando** | Deploy automático na tag |
-| — | Tags imutáveis | `make image-push` recusa tag existente; ruleset do GitHub impede apagar/mover tags `v*` | Sobrescrever a tag ao rerodar o pipeline |
+| — | Tags imutáveis | `publicar-imagem.sh` nunca sobrescreve: mesma tag + mesmo commit na label = nada a fazer (rerodar é seguro); outro commit ou registry sem resposta clara = erro. Ruleset do GitHub impede apagar/mover tags `v*` | Sobrescrever a tag ao rerodar o pipeline |
 | P8 | Só "merge commit" no repo + lint do título | Squash trocaria os commits checados pelo título do PR, e a versão sairia errada sem aviso | Squash merge |
 
 Detalhes que valem explicar:
 
 - **`GIT_DEPTH: 0`** no GitLab: o clone raso padrão (20 commits) quebraria o `git describe`; o script falha alto nesse caso.
 - **Versão calculada uma vez**: o build grava `IMAGE_TAG` num `dotenv` e os deploys usam esse valor (não recalculam).
-- **`resource_group`** (GitLab) e **`concurrency`** (Actions): um deploy por ambiente por vez.
+- **`resource_group`** (GitLab) e **`concurrency`** (Actions): um deploy por ambiente por vez. Eles não ordenam por commit,
+  então homologação só implanta a ponta da develop (`ainda-e-ponta.sh`): um build antigo que termina depois não sobrescreve o novo.
 - **Credenciais**: kubeconfig por environment (variável File no GitLab, secret no Actions), nunca no repositório.
   No Actions o `GITHUB_TOKEN` tem leitura por padrão; só o build pede `packages: write`.
 - **Rede restrita**: imagens dos jobs via `BASE_REGISTRY` (mirror) e o binário do cog via `COG_URL`, conferido por sha256.
@@ -176,7 +184,7 @@ Discuti estas ideias e deixei fora do código por escopo; são a minha posição
 - **Aprovação de environment no GitLab é Premium**: no plano gratuito, a proteção é `when: manual` + tags `v*` e branch
   `develop` protegidas (variáveis protegidas só chegam a refs protegidas).
 - **Corrida no push da tag**: a checagem "já existe" antes do push não é atômica; a garantia real é regra de imutabilidade no registry.
-- **Rerodar o pipeline de uma tag** falha no build (tag já publicada): para refazer só o deploy, rerodar o job de deploy.
+- **`make release` não confere o pipeline**: ele exige que o commit esteja na origin, mas não que o deploy em homologação tenha passado. Conferir antes de lançar (com mais tempo: consultar o status do commit pela API).
 
 ---
 
