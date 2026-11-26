@@ -1,0 +1,28 @@
+# Lint de Conventional Commits no PR: a versão é calculada a partir das mensagens,
+# então mensagem fora do padrão bloqueia o merge (check obrigatório na develop).
+name: commits
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  cog-check:
+    name: cog check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # precisa do histórico para checar o intervalo do PR
+
+      - name: Instalar cog (versão fixa, sha256 conferido)
+        run: sudo scripts/install-cog.sh
+
+      - name: Checar só os commits do PR
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: cog check "$BASE..$HEAD"
