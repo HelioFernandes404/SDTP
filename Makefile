@@ -1,8 +1,9 @@
 REGISTRY ?= docker.io
 IMAGE    ?= contador
 VCS_REF  := $(shell git rev-parse HEAD)
-# git describe: "1.4.2-3-g3f9a2c1" fora de tag, "1.5.0" numa tag; sem tags, o SHA curto.
-VERSION  := $(shell git describe --tags --always --dirty | sed 's/^v//')
+# "1.5.0" numa tag v1.5.0; "1.5.0-rc.3.d743945" fora de tag (ver scripts/versao.sh).
+# ?= : o CI pode passar VERSION pronta; localmente é calculada só quando algum alvo usa.
+VERSION  ?= $(shell ./scripts/versao.sh)
 
 .PHONY: image image-test image-scan lint
 
