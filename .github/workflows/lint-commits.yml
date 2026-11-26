@@ -26,9 +26,9 @@ jobs:
 
       - name: Checar só os commits do PR
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: cog check "$BASE..$HEAD"
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: cog check "$PR_BASE..$PR_HEAD"
 
       - name: Checar o título do PR
         env:
@@ -37,4 +37,4 @@ jobs:
         run: |
           git config --global user.name ci
           git config --global user.email ci@localhost
-          cog verify "$TITULO"
+          cog verify -- "$TITULO"   # "--": título começando com "-" não vira opção do cog
