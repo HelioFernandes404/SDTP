@@ -4,11 +4,14 @@
 #   push na develop    -> build + push 1.5.0-rc.N.<sha>  -> deploy em homologação (automático)
 #   tag v1.5.0         -> build + push 1.5.0             -> deploy em produção (manual)
 #
-# Variáveis de CI/CD (Settings > CI/CD > Variables), por environment:
-#   KUBECONFIG    tipo File, escopo homologacao / producao, protegida e mascarada
-#   KUBE_CONTEXT  contexto dentro desse kubeconfig
-#   BASE_REGISTRY mirror das imagens públicas (padrão docker.io); vale para a base do Dockerfile
-#   COG_URL       (opcional) cópia do binário do cog no mirror de artefatos
+# Variáveis de CI/CD (Settings > CI/CD > Variables):
+#   Por environment (escopo homologacao / producao):
+#     KUBECONFIG    tipo File, protegida. Não dá para mascarar: o GitLab só mascara valor de uma linha,
+#                   e kubeconfig é YAML multilinha (por ser File, o valor não aparece no log do job)
+#     KUBE_CONTEXT  contexto dentro desse kubeconfig
+#   Sem escopo de environment (lint e build não têm environment e também precisam delas):
+#     BASE_REGISTRY mirror das imagens públicas (padrão docker.io); vale também para a base do Dockerfile
+#     COG_URL       (opcional) cópia do binário do cog no mirror de artefatos
 # Protegidas só chegam a refs protegidas: proteger a branch develop e as tags v*.
 
 workflow:
@@ -42,7 +45,7 @@ lint-commits:
     - cog check "$CI_MERGE_REQUEST_DIFF_BASE_SHA..$CI_COMMIT_SHA"
     - git config --global user.name ci          # cog verify aborta sem user.name/user.email
     - git config --global user.email ci@localhost
-    - cog verify "$CI_MERGE_REQUEST_TITLE"     # título do MR também no padrão
+    - cog verify -- "$CI_MERGE_REQUEST_TITLE"  # título do MR também no padrão ("--": título com "-" não vira opção)
     # Projeto com merge method "Merge commit" (sem squash): os commits checados são os que ficam na develop.
 
 # ---------------------------------------------------------------- build
@@ -93,6 +96,11 @@ deploy-homologacao:
   resource_group: homologacao                   # um deploy por vez neste ambiente
   rules:
     - if: $CI_COMMIT_BRANCH == "develop"        # automático
+  script:
+    # Só a ponta da develop vai para homologação: um build antigo que terminou depois não sobrescreve
+    # o deploy do commit mais novo (exit 1 = superado, pula; outro erro = falha).
+    - scripts/ainda-e-ponta.sh develop "$CI_COMMIT_SHA" || { [ $? -eq 1 ] && exit 0; exit 1; }
+    - !reference [.deploy, script]
 
 deploy-producao:
   extends: .deploy

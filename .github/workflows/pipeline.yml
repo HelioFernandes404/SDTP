@@ -43,8 +43,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build e push (recusa sobrescrever tag existente)
-        run: make image-push IMAGE="${{ steps.versao.outputs.imagem }}" VERSION="${{ steps.versao.outputs.versao }}"
+      - name: Build e push (nunca sobrescreve tag existente)
+        env:   # valores via env, nunca interpolados no código do shell
+          IMAGE: ${{ steps.versao.outputs.imagem }}
+          VERSION: ${{ steps.versao.outputs.versao }}
+          BASE_REGISTRY: ${{ vars.BASE_REGISTRY || 'docker.io' }}   # mirror das imagens públicas, se configurado
+        run: make image-push IMAGE="$IMAGE" VERSION="$VERSION" REGISTRY="$BASE_REGISTRY"
 
   deploy-homologacao:
     name: deploy homologação
@@ -64,6 +68,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.versao }}
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}   # secret do environment
           KUBE_CONTEXT: ${{ vars.KUBE_CONTEXT }}           # variável do environment
+          DEPLOY_SIMULADO: ${{ vars.DEPLOY_SIMULADO }}     # "true" só onde não há cluster (este repo público)
         run: scripts/ci-deploy.sh
 
   deploy-producao:
@@ -84,4 +89,5 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.versao }}
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
           KUBE_CONTEXT: ${{ vars.KUBE_CONTEXT }}
+          DEPLOY_SIMULADO: ${{ vars.DEPLOY_SIMULADO }}
         run: scripts/ci-deploy.sh
