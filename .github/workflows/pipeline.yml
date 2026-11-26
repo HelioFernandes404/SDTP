@@ -1,0 +1,87 @@
+# Equivalente ao .gitlab-ci.yml (a entrega obrigatória), rodando de verdade no GitHub.
+#   push na develop  -> build + push 1.5.0-rc.N.<sha>   -> deploy em homologação (automático)
+#   tag v1.5.0       -> build + push 1.5.0              -> deploy em produção (manual: aprovação no environment)
+name: pipeline
+
+on:
+  push:
+    branches: [develop]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read   # padrão mínimo; cada job pede só o que precisa
+
+jobs:
+  build:
+    name: build e push
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write   # push no GHCR com o GITHUB_TOKEN (sem segredo extra)
+    outputs:
+      versao: ${{ steps.versao.outputs.versao }}
+      imagem: ${{ steps.versao.outputs.imagem }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # git describe e cog precisam do histórico e das tags
+
+      - name: Instalar cog (versão fixa, sha256 conferido)
+        run: sudo scripts/install-cog.sh
+
+      - name: Calcular a tag da imagem
+        id: versao
+        run: |
+          versao="$(scripts/versao.sh)"
+          imagem="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contador"   # GHCR exige minúsculas
+          echo "versao=$versao" >> "$GITHUB_OUTPUT"
+          echo "imagem=$imagem" >> "$GITHUB_OUTPUT"
+          echo "imagem: \`$imagem:$versao\` (commit \`$GITHUB_SHA\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Login no GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build e push (recusa sobrescrever tag existente)
+        run: make image-push IMAGE="${{ steps.versao.outputs.imagem }}" VERSION="${{ steps.versao.outputs.versao }}"
+
+  deploy-homologacao:
+    name: deploy homologação
+    if: github.ref == 'refs/heads/develop'
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: homologacao   # só a develop pode usar este environment
+    concurrency:
+      group: deploy-homologacao   # um deploy por vez; um pendente mais novo cancela o pendente mais antigo
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        env:
+          AMBIENTE: homologacao
+          IMAGE: ${{ needs.build.outputs.imagem }}
+          IMAGE_TAG: ${{ needs.build.outputs.versao }}
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}   # secret do environment
+          KUBE_CONTEXT: ${{ vars.KUBE_CONTEXT }}           # variável do environment
+        run: scripts/ci-deploy.sh
+
+  deploy-producao:
+    name: deploy produção
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: producao   # revisor obrigatório = o job só roda depois da aprovação manual
+    concurrency:
+      group: deploy-producao
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        env:
+          AMBIENTE: producao
+          IMAGE: ${{ needs.build.outputs.imagem }}
+          IMAGE_TAG: ${{ needs.build.outputs.versao }}
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          KUBE_CONTEXT: ${{ vars.KUBE_CONTEXT }}
+        run: scripts/ci-deploy.sh
