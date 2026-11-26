@@ -17,10 +17,11 @@ ns="${NAMESPACE:-contador}"
 k() { kubectl --context "$KUBE_CONTEXT" --namespace "$ns" "$@"; }
 
 echo "deploy: $ambiente <- $IMAGE:$tag (contexto $KUBE_CONTEXT, namespace $ns)"
-# change-cause aparece no `kubectl rollout history` (qual versão cada revisão subiu).
-# Anota antes do set image: a anotação é copiada para o ReplicaSet novo que o set image cria.
-k annotate deployment/contador --overwrite "kubernetes.io/change-cause=$ambiente $tag (pipeline)"
 k set image deployment/contador "contador=$IMAGE:$tag"
+# change-cause aparece no `kubectl rollout history` (qual versão cada revisão subiu).
+# Depois do set image: o controller copia a anotação para o ReplicaSet novo. Antes dele,
+# ela iria parar no ReplicaSet antigo (testado: o histórico ficava com as versões trocadas).
+k annotate deployment/contador --overwrite "kubernetes.io/change-cause=$ambiente $tag (pipeline)"
 
 # Espera o rollout terminar: se o pod novo não ficar pronto, o job fica vermelho.
 # Sem isso, o pipeline ficaria verde mesmo com a aplicação quebrada.
