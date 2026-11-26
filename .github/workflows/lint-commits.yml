@@ -2,7 +2,7 @@
 # então mensagem fora do padrão bloqueia o merge (check obrigatório na develop).
 # O repo só permite "Create a merge commit": squash trocaria os commits checados por um commit
 # com o título do PR, e rebase reescreveria os SHAs. O título também é checado.
-name: commits
+name: lint de commits
 
 on:
   pull_request:
@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  cog-check:
-    name: cog check
+  lint-commits:
+    name: lint de commits
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

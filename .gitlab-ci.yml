@@ -30,7 +30,7 @@ variables:
   IMAGE: $CI_REGISTRY_IMAGE
 
 # ---------------------------------------------------------------- lint
-commits:
+lint-commits:
   stage: lint
   image: $BASE_REGISTRY/library/alpine:3.21
   rules:

@@ -127,7 +127,7 @@ IMAGE=ghcr.io/heliofernandes404/contador KUBE_CONTEXT=<contexto> \
 | `make release` em repo descartável | recusa HEAD à frente da origin, recusa commit que já é release, cria e envia só a tag nova |
 | `make deploy` em cluster k3d descartável: tag existente | rollout completo, exit 0, `rollout history` com a versão |
 | `make deploy` com tag inexistente | job falha após o timeout; os 2 pods antigos seguem atendendo (`maxUnavailable: 0`) |
-| `gitlab-ci-local --list` simulando push na develop / tag `v1.5.0` / MR / outra tag | `build → deploy-homologacao` / `build → deploy-producao (manual)` / `commits` / nada |
+| `gitlab-ci-local --list` simulando push na develop / tag `v1.5.0` / MR / outra tag | `build → deploy-homologacao` / `build → deploy-producao (manual)` / `lint-commits` / nada |
 | `actionlint`, `shellcheck`, schema do GitLab CI | sem apontamentos |
 
 No GitHub, o repositório não alcança um cluster, então o passo de deploy **avisa que não rodou** (com o
